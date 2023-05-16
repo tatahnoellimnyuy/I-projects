@@ -1,0 +1,66 @@
+name: CI/CD Pipeline
+
+on:
+  workflow_dispatch:   # Manual trigger
+  schedule:
+    - cron: "0 0 * * *"  # Trigger daily at midnight (UTC time)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+
+      - name: Install dependencies
+        id: InstallDependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+        continue-on-error: true
+      
+      - name: Run tests
+        id: RunTests
+        run: ./vendor/bin/phpunit
+        continue-on-error: true
+      
+      - name: Install lftp
+        id: InstallFtp
+        run: sudo apt-get install -y lftp
+        continue-on-error: true
+      
+      - name: Deploy to FTP
+        id: DeployToFtp
+        run: |
+          lftp -c "open -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} ${{ secrets.FTP_SERVER }} && mirror -R ./path/to/deploy /remote/path"
+        continue-on-error: true
+      - name: Deploy to FTP 2
+        id: DeployToFtp2
+        run: |
+          lftp -c "open -u ${{ secrets.FTP2_USERNAME }},${{ secrets.FTP2_PASSWORD }} ${{ secrets.FTP2_SERVER }} && mirror -R ./path/to/deploy /remote/path"
+        continue-on-error: true
+      
+      
+      - name: Handle deployment errors
+        if: ${{ always() }}
+        run: |
+          if [[ ${{ steps.InstallDependencies.outcome }} != 'success' ]]; then
+            echo "Pipeline failed at step: Install dependencies"
+            exit 1
+          elif [[ ${{ steps.RunTests.outcome }} != 'success' ]]; then
+            echo "Pipeline failed at step: Run tests"
+            exit 1
+          elif [[ ${{ steps.InstallFtp.outcome }} != 'success' ]]; then
+            echo "Pipeline failed at step: Install lftp"
+            exit 1
+          elif [[ ${{ steps.DeployToFtp.outcome }} != 'success' ]]; then
+            echo "Pipeline failed at step: Deploy to FTP"
+            exit 1
+          elif [[ ${{ steps.DeployToFtp2.outcome }} != 'success' ]]; then
+            echo "Pipeline failed at step: Deploy to FTP2 server"
+            exit 1
+          fi
